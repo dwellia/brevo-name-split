@@ -5,26 +5,41 @@ export default async function handler(req, res) {
 
   const event = req.body;
 
-  // Only process contact events
-  if (
-    event.event !== "contact_created" &&
-    event.event !== "contact_updated" &&
-    event.event !== "contact_added_to_list"
-  ) {
-    return res.status(200).send("Ignored");
+  if (!event.email) {
+    return res.status(200).send("No email provided");
   }
 
   const email = event.email;
-  const fullName = event.attributes?.FULL_NAME;
 
-  if (!email || !fullName) {
-    return res.status(200).send("No name to split");
+  // Step 1: Fetch full contact data from Brevo
+  const contactResponse = await fetch(
+    `https://api.brevo.com/v3/contacts/${encodeURIComponent(email)}`,
+    {
+      method: "GET",
+      headers: {
+        "api-key": process.env.BREVO_API_KEY,
+        "Content-Type": "application/json"
+      }
+    }
+  );
+
+  if (!contactResponse.ok) {
+    return res.status(200).send("Contact fetch failed");
   }
 
+  const contactData = await contactResponse.json();
+  const fullName = contactData.attributes?.FULL_NAME;
+
+  if (!fullName) {
+    return res.status(200).send("No FULL_NAME found");
+  }
+
+  // Step 2: Split the name
   const parts = fullName.trim().split(/\s+/);
   const firstName = parts.shift();
   const lastName = parts.join(" ") || "";
 
+  // Step 3: Update contact with split values
   await fetch(
     `https://api.brevo.com/v3/contacts/${encodeURIComponent(email)}`,
     {
