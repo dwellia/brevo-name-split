@@ -1,5 +1,3 @@
-import axios from "axios";
-
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).send("Method not allowed");
@@ -22,19 +20,20 @@ export default async function handler(req, res) {
   const firstName = parts.shift();
   const lastName = parts.join(" ");
 
-  await axios.put(
+  await fetch(
     `https://api.brevo.com/v3/contacts/${encodeURIComponent(email)}`,
     {
-      attributes: {
-        FIRSTNAME: firstName,
-        LASTNAME: lastName
-      }
-    },
-    {
+      method: "PUT",
       headers: {
         "api-key": process.env.BREVO_API_KEY,
         "Content-Type": "application/json"
-      }
+      },
+      body: JSON.stringify({
+        attributes: {
+          FIRSTNAME: firstName,
+          LASTNAME: lastName
+        }
+      })
     }
   );
 
