@@ -4,46 +4,37 @@ export default async function handler(req, res) {
   }
 
   const email = req.body.email;
+  if (!email) return res.status(200).send("No email");
 
-  if (!email) {
-    return res.status(200).send("No email provided");
+  const apiKey = process.env.BREVO_API_KEY;
+  if (!apiKey) {
+    console.log("API key missing");
+    return res.status(200).send("No API key");
   }
 
-  // Fetch contact from Brevo
   const contactResponse = await fetch(
     `https://api.brevo.com/v3/contacts/${encodeURIComponent(email)}`,
     {
-      method: "GET",
-      headers: {
-        "api-key": process.env.BREVO_API_KEY,
-        "Content-Type": "application/json"
-      }
+      headers: { "api-key": apiKey }
     }
   );
 
-  if (!contactResponse.ok) {
-    console.log("Fetch failed");
-    return res.status(200).send("Fetch failed");
-  }
-
   const contactData = await contactResponse.json();
-  const fullName = contactData.attributes?.FULL_NAME;
+  console.log("Fetched:", contactData);
 
-  if (!fullName) {
-    return res.status(200).send("No FULL_NAME found");
-  }
+  const fullName = contactData.attributes?.FULL_NAME;
+  if (!fullName) return res.status(200).send("No FULL_NAME");
 
   const parts = fullName.trim().split(/\s+/);
   const firstName = parts.shift();
   const lastName = parts.join(" ") || "";
 
-  // Update contact
-  await fetch(
+  const updateResponse = await fetch(
     `https://api.brevo.com/v3/contacts/${encodeURIComponent(email)}`,
     {
       method: "PUT",
       headers: {
-        "api-key": process.env.BREVO_API_KEY,
+        "api-key": apiKey,
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
@@ -55,5 +46,7 @@ export default async function handler(req, res) {
     }
   );
 
-  return res.status(200).send("Updated");
+  console.log("Update status:", updateResponse.status);
+
+  return res.status(200).send("Done");
 }
