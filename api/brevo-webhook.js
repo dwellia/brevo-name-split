@@ -7,29 +7,63 @@ export default async function handler(req, res) {
   if (!email) return res.status(200).send("No email");
 
   const apiKey = process.env.BREVO_API_KEY;
-  if (!apiKey) {
-    console.log("API key missing");
-    return res.status(200).send("No API key");
-  }
+  if (!apiKey) return res.status(200).send("Missing API key");
 
+  // Fetch full contact from Brevo
   const contactResponse = await fetch(
     `https://api.brevo.com/v3/contacts/${encodeURIComponent(email)}`,
     {
-      headers: { "api-key": apiKey }
+      headers: {
+        "api-key": apiKey,
+        "Content-Type": "application/json"
+      }
     }
   );
 
+  if (!contactResponse.ok) {
+    return res.status(200).send("Fetch failed");
+  }
+
   const contactData = await contactResponse.json();
-  console.log("Fetched:", contactData);
 
+  // ===== NAME SPLIT =====
   const fullName = contactData.attributes?.FULL_NAME;
-  if (!fullName) return res.status(200).send("No FULL_NAME");
 
-  const parts = fullName.trim().split(/\s+/);
-  const firstName = parts.shift();
-  const lastName = parts.join(" ") || "";
+  let firstName = null;
+  let lastName = null;
 
-  const updateResponse = await fetch(
+  if (fullName) {
+    const parts = fullName.trim().split(/\s+/);
+    firstName = parts.shift();
+    lastName = parts.join(" ") || "";
+  }
+
+  // ===== DATE FORMAT FIX =====
+  const rawDate = contactData.attributes?.DATE_CREATED;
+
+  let formattedDate = null;
+
+  if (rawDate) {
+    const parsed = new Date(rawDate);
+    if (!isNaN(parsed)) {
+      formattedDate = parsed.toISOString().split("T")[0]; // YYYY-MM-DD
+    }
+  }
+
+  // ===== UPDATE CONTACT =====
+  const updatePayload = {
+    attributes: {}
+  };
+
+  if (firstName) updatePayload.attributes.FIRSTNAME = firstName;
+  if (lastName !== null) updatePayload.attributes.LASTNAME = lastName;
+  if (formattedDate) updatePayload.attributes.DATE_CREATED = formattedDate;
+
+  if (Object.keys(updatePayload.attributes).length === 0) {
+    return res.status(200).send("Nothing to update");
+  }
+
+  await fetch(
     `https://api.brevo.com/v3/contacts/${encodeURIComponent(email)}`,
     {
       method: "PUT",
@@ -37,16 +71,9 @@ export default async function handler(req, res) {
         "api-key": apiKey,
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({
-        attributes: {
-          FIRSTNAME: firstName,
-          LASTNAME: lastName
-        }
-      })
+      body: JSON.stringify(updatePayload)
     }
   );
 
-  console.log("Update status:", updateResponse.status);
-
-  return res.status(200).send("Done");
+  return res.status(200).send("Updated");
 }
