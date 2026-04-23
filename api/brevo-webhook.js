@@ -6,11 +6,11 @@ export default async function handler(req, res) {
   const email = req.body.email;
 
   if (!email) {
-    console.log("No email in webhook payload");
-    return res.status(200).send("No email");
+    return res.status(200).send("No email provided");
   }
 
-  const response = await fetch(
+  // Fetch contact from Brevo
+  const contactResponse = await fetch(
     `https://api.brevo.com/v3/contacts/${encodeURIComponent(email)}`,
     {
       method: "GET",
@@ -21,8 +21,39 @@ export default async function handler(req, res) {
     }
   );
 
-  const data = await response.json();
-  console.log("FULL CONTACT DATA:", JSON.stringify(data, null, 2));
+  if (!contactResponse.ok) {
+    console.log("Fetch failed");
+    return res.status(200).send("Fetch failed");
+  }
 
-  return res.status(200).send("Logged");
+  const contactData = await contactResponse.json();
+  const fullName = contactData.attributes?.FULL_NAME;
+
+  if (!fullName) {
+    return res.status(200).send("No FULL_NAME found");
+  }
+
+  const parts = fullName.trim().split(/\s+/);
+  const firstName = parts.shift();
+  const lastName = parts.join(" ") || "";
+
+  // Update contact
+  await fetch(
+    `https://api.brevo.com/v3/contacts/${encodeURIComponent(email)}`,
+    {
+      method: "PUT",
+      headers: {
+        "api-key": process.env.BREVO_API_KEY,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        attributes: {
+          FIRSTNAME: firstName,
+          LASTNAME: lastName
+        }
+      })
+    }
+  );
+
+  return res.status(200).send("Updated");
 }
