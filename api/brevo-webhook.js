@@ -9,7 +9,9 @@ export default async function handler(req, res) {
   const apiKey = process.env.BREVO_API_KEY;
   if (!apiKey) return res.status(200).send("Missing API key");
 
-  // Fetch full contact from Brevo
+  // ✅ Wait 4 seconds to allow import to finish
+  await new Promise(resolve => setTimeout(resolve, 4000));
+
   const contactResponse = await fetch(
     `https://api.brevo.com/v3/contacts/${encodeURIComponent(email)}`,
     {
@@ -46,14 +48,11 @@ export default async function handler(req, res) {
   if (rawDate) {
     const parsed = new Date(rawDate);
     if (!isNaN(parsed)) {
-      formattedDate = parsed.toISOString().split("T")[0]; // YYYY-MM-DD
+      formattedDate = parsed.toISOString().split("T")[0];
     }
   }
 
-  // ===== UPDATE CONTACT =====
-  const updatePayload = {
-    attributes: {}
-  };
+  const updatePayload = { attributes: {} };
 
   if (firstName) updatePayload.attributes.FIRSTNAME = firstName;
   if (lastName !== null) updatePayload.attributes.LASTNAME = lastName;
