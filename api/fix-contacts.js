@@ -19,18 +19,12 @@ export default async function handler(req, res) {
       }
     );
 
-    if (!response.ok) {
-      const err = await response.text();
-      console.log("Fetch error:", err);
-      break;
-    }
+    if (!response.ok) break;
 
     const data = await response.json();
     const contacts = data.contacts;
 
-    if (!contacts || contacts.length === 0) {
-      break;
-    }
+    if (!contacts || contacts.length === 0) break;
 
     for (const contact of contacts) {
       const attrs = contact.attributes || {};
@@ -45,7 +39,16 @@ export default async function handler(req, res) {
         updatePayload.attributes.LASTNAME = parts.join(" ") || "";
       }
 
-      // ===== DATE FORMAT FIX =====
+      // ===== DATE FROM CHECKIN_DATE → DATE_CREATED =====
+      if (attrs.CHECKIN_DATE) {
+        const parsed = new Date(attrs.CHECKIN_DATE);
+        if (!isNaN(parsed)) {
+          updatePayload.attributes.DATE_CREATED =
+            parsed.toISOString().split("T")[0];
+        }
+      }
+
+      // ===== DATE NORMALIZATION (TEXT → ISO) =====
       if (attrs.DATE_CREATED && typeof attrs.DATE_CREATED === "string") {
         const parsed = new Date(attrs.DATE_CREATED);
         if (!isNaN(parsed)) {
@@ -54,9 +57,31 @@ export default async function handler(req, res) {
         }
       }
 
+      // ===== PHONE NORMALIZATION =====
+      if (attrs.SMS) {
+        let digits = attrs.SMS.replace(/\D/g, "");
+
+        // Ensure US format
+        if (digits.length === 10) {
+          digits = "1" + digits;
+        }
+
+        if (digits.length === 11 && digits.startsWith("1")) {
+          const formatted =
+            "1-" +
+            digits.substring(1, 4) +
+            "-" +
+            digits.substring(4, 7) +
+            "-" +
+            digits.substring(7);
+
+          updatePayload.attributes.SMS = formatted;
+        }
+      }
+
       // ===== UPDATE CONTACT IF NEEDED =====
       if (Object.keys(updatePayload.attributes).length > 0) {
-        const updateResponse = await fetch(
+        await fetch(
           `https://api.brevo.com/v3/contacts/${encodeURIComponent(email)}`,
           {
             method: "PUT",
@@ -68,12 +93,7 @@ export default async function handler(req, res) {
           }
         );
 
-        if (updateResponse.ok) {
-          totalFixed++;
-        } else {
-          const err = await updateResponse.text();
-          console.log("Update error:", err);
-        }
+        totalFixed++;
       }
     }
 
