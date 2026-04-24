@@ -1,16 +1,17 @@
 export default async function handler(req, res) {
   const apiKey = process.env.BREVO_API_KEY;
-  if (!apiKey) {
-    return res.status(500).send("Missing API key");
-  }
+  if (!apiKey) return res.status(500).send("Missing API key");
+
+  const fetchLimit = 200;
+  const maxUpdatesPerRun = 200;
 
   let offset = 0;
-  const limit = 50;
   let totalFixed = 0;
+  let scanned = 0;
 
-  while (true) {
+  while (totalFixed < maxUpdatesPerRun) {
     const response = await fetch(
-      `https://api.brevo.com/v3/contacts?limit=${limit}&offset=${offset}`,
+      `https://api.brevo.com/v3/contacts?limit=${fetchLimit}&offset=${offset}`,
       {
         headers: {
           "api-key": apiKey,
@@ -22,11 +23,15 @@ export default async function handler(req, res) {
     if (!response.ok) break;
 
     const data = await response.json();
-    const contacts = data.contacts;
+    const contacts = data.contacts || [];
 
-    if (!contacts || contacts.length === 0) break;
+    if (contacts.length === 0) break;
 
     for (const contact of contacts) {
+      if (totalFixed >= maxUpdatesPerRun) break;
+
+      scanned++;
+
       const attrs = contact.attributes || {};
       const email = contact.email;
 
@@ -39,7 +44,7 @@ export default async function handler(req, res) {
         updatePayload.attributes.LASTNAME = parts.join(" ") || "";
       }
 
-      // ===== DATE FROM CHECKIN_DATE → DATE_CREATED =====
+      // ===== CHECKIN_DATE → DATE_CREATED =====
       if (attrs.CHECKIN_DATE) {
         const parsed = new Date(attrs.CHECKIN_DATE);
         if (!isNaN(parsed)) {
@@ -48,7 +53,7 @@ export default async function handler(req, res) {
         }
       }
 
-      // ===== DATE NORMALIZATION (TEXT → ISO) =====
+      // ===== DATE NORMALIZATION =====
       if (attrs.DATE_CREATED && typeof attrs.DATE_CREATED === "string") {
         const parsed = new Date(attrs.DATE_CREATED);
         if (!isNaN(parsed)) {
@@ -57,47 +62,33 @@ export default async function handler(req, res) {
         }
       }
 
-    // ===== PHONE REMAP + NORMALIZATION =====
+      // ===== PHONE REMAP + NORMALIZE =====
+      let rawPhone = attrs.PHONE || attrs.SMS;
 
-// Prefer PHONE, but fall back to SMS if PHONE empty
-let rawPhone = null;
+      if (rawPhone) {
+        let digits = rawPhone.replace(/\D/g, "");
 
-if (attrs.PHONE) {
-  rawPhone = attrs.PHONE;
-} else if (attrs.SMS) {
-  rawPhone = attrs.SMS;
-}
+        if (digits.length === 10) digits = "1" + digits;
 
-if (rawPhone) {
-  let digits = rawPhone.replace(/\D/g, "");
+        if (digits.length === 11 && digits.startsWith("1")) {
+          const formatted =
+            "1-" +
+            digits.substring(1, 4) +
+            "-" +
+            digits.substring(4, 7) +
+            "-" +
+            digits.substring(7);
 
-  // If 10 digits, assume US and prepend 1
-  if (digits.length === 10) {
-    digits = "1" + digits;
-  }
+          if (attrs.PHONE !== formatted) {
+            updatePayload.attributes.PHONE = formatted;
+          }
 
-  if (digits.length === 11 && digits.startsWith("1")) {
-    const formatted =
-      "1-" +
-      digits.substring(1, 4) +
-      "-" +
-      digits.substring(4, 7) +
-      "-" +
-      digits.substring(7);
+          if (attrs.SMS) {
+            updatePayload.attributes.SMS = "";
+          }
+        }
+      }
 
-    // Update PHONE if needed
-    if (attrs.PHONE !== formatted) {
-      updatePayload.attributes.PHONE = formatted;
-    }
-
-    // Optional: Clear SMS field if it exists
-    if (attrs.SMS) {
-      updatePayload.attributes.SMS = "";
-    }
-  }
-}
-
-      // ===== UPDATE CONTACT IF NEEDED =====
       if (Object.keys(updatePayload.attributes).length > 0) {
         await fetch(
           `https://api.brevo.com/v3/contacts/${encodeURIComponent(email)}`,
@@ -115,8 +106,10 @@ if (rawPhone) {
       }
     }
 
-    offset += limit;
+    offset += fetchLimit;
   }
 
-  return res.status(200).send(`Fixed ${totalFixed} contacts`);
+  return res.status(200).send(
+    `Scanned ${scanned} contacts. Fixed ${totalFixed}.`
+  );
 }
