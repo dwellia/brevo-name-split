@@ -57,16 +57,25 @@ export default async function handler(req, res) {
         }
       }
 
-      // ===== PHONE NORMALIZATION (PHONE attribute) =====
+    // ===== PHONE REMAP + NORMALIZATION =====
+
+// Prefer PHONE, but fall back to SMS if PHONE empty
+let rawPhone = null;
+
 if (attrs.PHONE) {
-  let digits = attrs.PHONE.replace(/\D/g, "");
+  rawPhone = attrs.PHONE;
+} else if (attrs.SMS) {
+  rawPhone = attrs.SMS;
+}
+
+if (rawPhone) {
+  let digits = rawPhone.replace(/\D/g, "");
 
   // If 10 digits, assume US and prepend 1
   if (digits.length === 10) {
     digits = "1" + digits;
   }
 
-  // Only format valid US 11-digit numbers starting with 1
   if (digits.length === 11 && digits.startsWith("1")) {
     const formatted =
       "1-" +
@@ -76,9 +85,14 @@ if (attrs.PHONE) {
       "-" +
       digits.substring(7);
 
-    // Only update if different (prevents constant rewrites)
+    // Update PHONE if needed
     if (attrs.PHONE !== formatted) {
       updatePayload.attributes.PHONE = formatted;
+    }
+
+    // Optional: Clear SMS field if it exists
+    if (attrs.SMS) {
+      updatePayload.attributes.SMS = "";
     }
   }
 }
