@@ -57,27 +57,31 @@ export default async function handler(req, res) {
         }
       }
 
-      // ===== PHONE NORMALIZATION =====
-      if (attrs.SMS) {
-        let digits = attrs.SMS.replace(/\D/g, "");
+      // ===== PHONE NORMALIZATION (PHONE attribute) =====
+if (attrs.PHONE) {
+  let digits = attrs.PHONE.replace(/\D/g, "");
 
-        // Ensure US format
-        if (digits.length === 10) {
-          digits = "1" + digits;
-        }
+  // If 10 digits, assume US and prepend 1
+  if (digits.length === 10) {
+    digits = "1" + digits;
+  }
 
-        if (digits.length === 11 && digits.startsWith("1")) {
-          const formatted =
-            "1-" +
-            digits.substring(1, 4) +
-            "-" +
-            digits.substring(4, 7) +
-            "-" +
-            digits.substring(7);
+  // Only format valid US 11-digit numbers starting with 1
+  if (digits.length === 11 && digits.startsWith("1")) {
+    const formatted =
+      "1-" +
+      digits.substring(1, 4) +
+      "-" +
+      digits.substring(4, 7) +
+      "-" +
+      digits.substring(7);
 
-          updatePayload.attributes.SMS = formatted;
-        }
-      }
+    // Only update if different (prevents constant rewrites)
+    if (attrs.PHONE !== formatted) {
+      updatePayload.attributes.PHONE = formatted;
+    }
+  }
+}
 
       // ===== UPDATE CONTACT IF NEEDED =====
       if (Object.keys(updatePayload.attributes).length > 0) {
