@@ -53,14 +53,22 @@ export default async function handler(req, res) {
         }
       }
 
-      // ===== DATE NORMALIZATION =====
-      if (attrs.DATE_CREATED && typeof attrs.DATE_CREATED === "string") {
-        const parsed = new Date(attrs.DATE_CREATED);
-        if (!isNaN(parsed)) {
-          updatePayload.attributes.DATE_CREATED =
-            parsed.toISOString().split("T")[0];
-        }
-      }
+     // ===== FORCE DATE NORMALIZATION TO YYYY-MM-DD =====
+if (attrs.DATE_CREATED) {
+  const parsed = new Date(attrs.DATE_CREATED);
+
+  if (!isNaN(parsed)) {
+    const year = parsed.getFullYear();
+    const month = String(parsed.getMonth() + 1).padStart(2, "0");
+    const day = String(parsed.getDate()).padStart(2, "0");
+
+    const normalized = `${year}-${month}-${day}`;
+
+    if (attrs.DATE_CREATED !== normalized) {
+      updatePayload.attributes.DATE_CREATED = normalized;
+    }
+  }
+}
 
       // ===== PHONE REMAP + NORMALIZE =====
       let rawPhone = attrs.PHONE || attrs.SMS;
