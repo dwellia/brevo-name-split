@@ -6,10 +6,12 @@ export default async function handler(req, res) {
   const maxUpdatesPerRun = 200;
 
   let offset = 0;
-  let totalFixed = 0;
+  let totalProcessed = 0;
   let scanned = 0;
 
-  while (totalFixed < maxUpdatesPerRun) {
+  const blockedDomains = ["booking.com", "vrbo.com", "airbnb.com"];
+
+  while (totalProcessed < maxUpdatesPerRun) {
     const response = await fetch(
       `https://api.brevo.com/v3/contacts?limit=${fetchLimit}&offset=${offset}`,
       {
@@ -28,7 +30,7 @@ export default async function handler(req, res) {
     if (contacts.length === 0) break;
 
     for (const contact of contacts) {
-      if (totalFixed >= maxUpdatesPerRun) break;
+      if (totalProcessed >= maxUpdatesPerRun) break;
 
       scanned++;
 
@@ -36,6 +38,39 @@ export default async function handler(req, res) {
       const email = contact.email;
 
       let updatePayload = { attributes: {} };
+      let shouldDelete = false;
+
+      // ===== REMOVE OTA EMAILS =====
+      if (email) {
+        const lowerEmail = email.toLowerCase();
+
+        if (blockedDomains.some(domain => lowerEmail.includes(domain))) {
+
+          // If no phone exists → delete contact entirely
+          if (!attrs.PHONE && !attrs.SMS) {
+            shouldDelete = true;
+          } else {
+            // Otherwise remove only the email
+            updatePayload.email = null;
+          }
+        }
+      }
+
+      // ===== DELETE CONTACT IF REQUIRED =====
+      if (shouldDelete) {
+        await fetch(
+          `https://api.brevo.com/v3/contacts/${encodeURIComponent(email)}`,
+          {
+            method: "DELETE",
+            headers: {
+              "api-key": apiKey
+            }
+          }
+        );
+
+        totalProcessed++;
+        continue;
+      }
 
       // ===== NAME SPLIT =====
       if (attrs.FULL_NAME && !attrs.FIRSTNAME) {
@@ -44,31 +79,22 @@ export default async function handler(req, res) {
         updatePayload.attributes.LASTNAME = parts.join(" ") || "";
       }
 
-      // ===== CHECKIN_DATE → DATE_CREATED =====
-      if (attrs.CHECKIN_DATE) {
-        const parsed = new Date(attrs.CHECKIN_DATE);
+      // ===== FORCE DATE NORMALIZATION TO YYYY-MM-DD =====
+      if (attrs.DATE_CREATED) {
+        const parsed = new Date(attrs.DATE_CREATED);
+
         if (!isNaN(parsed)) {
-          updatePayload.attributes.DATE_CREATED =
-            parsed.toISOString().split("T")[0];
+          const year = parsed.getFullYear();
+          const month = String(parsed.getMonth() + 1).padStart(2, "0");
+          const day = String(parsed.getDate()).padStart(2, "0");
+
+          const normalized = `${year}-${month}-${day}`;
+
+          if (attrs.DATE_CREATED !== normalized) {
+            updatePayload.attributes.DATE_CREATED = normalized;
+          }
         }
       }
-
-     // ===== FORCE DATE NORMALIZATION TO YYYY-MM-DD =====
-if (attrs.DATE_CREATED) {
-  const parsed = new Date(attrs.DATE_CREATED);
-
-  if (!isNaN(parsed)) {
-    const year = parsed.getFullYear();
-    const month = String(parsed.getMonth() + 1).padStart(2, "0");
-    const day = String(parsed.getDate()).padStart(2, "0");
-
-    const normalized = `${year}-${month}-${day}`;
-
-    if (attrs.DATE_CREATED !== normalized) {
-      updatePayload.attributes.DATE_CREATED = normalized;
-    }
-  }
-}
 
       // ===== PHONE REMAP + NORMALIZE =====
       let rawPhone = attrs.PHONE || attrs.SMS;
@@ -97,7 +123,10 @@ if (attrs.DATE_CREATED) {
         }
       }
 
-      if (Object.keys(updatePayload.attributes).length > 0) {
+      if (
+        Object.keys(updatePayload.attributes).length > 0 ||
+        updatePayload.email === null
+      ) {
         await fetch(
           `https://api.brevo.com/v3/contacts/${encodeURIComponent(email)}`,
           {
@@ -110,7 +139,7 @@ if (attrs.DATE_CREATED) {
           }
         );
 
-        totalFixed++;
+        totalProcessed++;
       }
     }
 
@@ -118,6 +147,6 @@ if (attrs.DATE_CREATED) {
   }
 
   return res.status(200).send(
-    `Scanned ${scanned} contacts. Fixed ${totalFixed}.`
+    `Scanned ${scanned} contacts. Processed ${totalProcessed}.`
   );
 }
