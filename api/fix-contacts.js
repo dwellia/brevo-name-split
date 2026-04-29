@@ -4,6 +4,7 @@ export default async function handler(req, res) {
 
   const fetchLimit = 200;
   const maxUpdatesPerRun = 200;
+  const targetListId = 8; // ✅ Past Guest list ID
 
   let offset = 0;
   let totalProcessed = 0;
@@ -46,11 +47,9 @@ export default async function handler(req, res) {
 
         if (blockedDomains.some(domain => lowerEmail.includes(domain))) {
 
-          // If no phone exists → delete contact entirely
           if (!attrs.PHONE && !attrs.SMS) {
             shouldDelete = true;
           } else {
-            // Otherwise remove only the email
             updatePayload.email = null;
           }
         }
@@ -62,14 +61,26 @@ export default async function handler(req, res) {
           `https://api.brevo.com/v3/contacts/${encodeURIComponent(email)}`,
           {
             method: "DELETE",
-            headers: {
-              "api-key": apiKey
-            }
+            headers: { "api-key": apiKey }
           }
         );
 
         totalProcessed++;
         continue;
+      }
+
+      // ===== LOG LIST ADD DATE IF EMPTY =====
+      if (
+        contact.listIds &&
+        contact.listIds.includes(targetListId) &&
+        !attrs.DATE_CREATED
+      ) {
+        const today = new Date();
+        const year = today.getFullYear();
+        const month = String(today.getMonth() + 1).padStart(2, "0");
+        const day = String(today.getDate()).padStart(2, "0");
+
+        updatePayload.attributes.DATE_CREATED = `${year}-${month}-${day}`;
       }
 
       // ===== NAME SPLIT =====
