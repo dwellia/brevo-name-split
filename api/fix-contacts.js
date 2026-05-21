@@ -4,7 +4,9 @@ export default async function handler(req, res) {
 
   const fetchLimit = 200;
   const maxUpdatesPerRun = 200;
-  const targetListId = 8; // ✅ Past Guest list ID
+
+  // Contacts created after this date get SOURCE_DATE copied from createdAt
+  const CUTOFF_DATE = new Date("2026-05-22T00:00:00Z");
 
   let offset = 0;
   let totalProcessed = 0;
@@ -69,18 +71,19 @@ export default async function handler(req, res) {
         continue;
       }
 
-      // ===== LOG LIST ADD DATE IF EMPTY =====
-      if (
-        contact.listIds &&
-        contact.listIds.includes(targetListId) &&
-        !attrs.SOURCE_DATE
-      ) {
-        const today = new Date();
-        const year = today.getFullYear();
-        const month = String(today.getMonth() + 1).padStart(2, "0");
-        const day = String(today.getDate()).padStart(2, "0");
+      // ===== COPY BREVO CREATION DATE TO SOURCE_DATE FOR NEW CONTACTS ONLY =====
+      // Only applies to contacts created after the cutoff date (tomorrow onwards)
+      // Old imported contacts without SOURCE_DATE are skipped intentionally
+      if (!attrs.SOURCE_DATE && contact.createdAt) {
+        const created = new Date(contact.createdAt);
 
-        updatePayload.attributes.SOURCE_DATE = `${year}-${month}-${day}`;
+        if (!isNaN(created) && created >= CUTOFF_DATE) {
+          const year = created.getFullYear();
+          const month = String(created.getMonth() + 1).padStart(2, "0");
+          const day = String(created.getDate()).padStart(2, "0");
+
+          updatePayload.attributes.SOURCE_DATE = `${year}-${month}-${day}`;
+        }
       }
 
       // ===== NAME SPLIT =====
@@ -90,7 +93,7 @@ export default async function handler(req, res) {
         updatePayload.attributes.LASTNAME = parts.join(" ") || "";
       }
 
-      // ===== FORCE DATE NORMALIZATION TO YYYY-MM-DD =====
+      // ===== FORCE SOURCE_DATE NORMALIZATION TO YYYY-MM-DD =====
       if (attrs.SOURCE_DATE) {
         const parsed = new Date(attrs.SOURCE_DATE);
 
