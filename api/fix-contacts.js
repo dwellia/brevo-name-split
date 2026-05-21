@@ -73,14 +73,14 @@ export default async function handler(req, res) {
       if (
         contact.listIds &&
         contact.listIds.includes(targetListId) &&
-        !attrs.DATE_CREATED
+        !attrs.SOURCE_DATE
       ) {
         const today = new Date();
         const year = today.getFullYear();
         const month = String(today.getMonth() + 1).padStart(2, "0");
         const day = String(today.getDate()).padStart(2, "0");
 
-        updatePayload.attributes.DATE_CREATED = `${year}-${month}-${day}`;
+        updatePayload.attributes.SOURCE_DATE = `${year}-${month}-${day}`;
       }
 
       // ===== NAME SPLIT =====
@@ -91,8 +91,8 @@ export default async function handler(req, res) {
       }
 
       // ===== FORCE DATE NORMALIZATION TO YYYY-MM-DD =====
-      if (attrs.DATE_CREATED) {
-        const parsed = new Date(attrs.DATE_CREATED);
+      if (attrs.SOURCE_DATE) {
+        const parsed = new Date(attrs.SOURCE_DATE);
 
         if (!isNaN(parsed)) {
           const year = parsed.getFullYear();
@@ -101,8 +101,8 @@ export default async function handler(req, res) {
 
           const normalized = `${year}-${month}-${day}`;
 
-          if (attrs.DATE_CREATED !== normalized) {
-            updatePayload.attributes.DATE_CREATED = normalized;
+          if (attrs.SOURCE_DATE !== normalized) {
+            updatePayload.attributes.SOURCE_DATE = normalized;
           }
         }
       }
