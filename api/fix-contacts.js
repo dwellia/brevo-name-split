@@ -4,16 +4,22 @@ export default async function handler(req, res) {
 
   const fetchLimit = 200;
   const maxUpdatesPerRun = 200;
+  const PAST_GUEST_LIST_ID = 8;
+  const TEMP_LIST_ID = 12;
+  const DRIP_BATCH_SIZE = 50;
 
   // Contacts created after this date get SOURCE_DATE copied from createdAt
   const CUTOFF_DATE = new Date("2026-05-22T00:00:00Z");
+
+  const blockedDomains = ["booking.com", "vrbo.com", "airbnb.com"];
 
   let offset = 0;
   let totalProcessed = 0;
   let scanned = 0;
 
-  const blockedDomains = ["booking.com", "vrbo.com", "airbnb.com"];
-
+  // ─────────────────────────────────────────────
+  // PASS 1: Clean all contacts in the main list
+  // ─────────────────────────────────────────────
   while (totalProcessed < maxUpdatesPerRun) {
     const response = await fetch(
       `https://api.brevo.com/v3/contacts?limit=${fetchLimit}&offset=${offset}`,
@@ -48,7 +54,6 @@ export default async function handler(req, res) {
         const lowerEmail = email.toLowerCase();
 
         if (blockedDomains.some(domain => lowerEmail.includes(domain))) {
-
           if (!attrs.PHONE && !attrs.SMS) {
             shouldDelete = true;
           } else {
@@ -72,8 +77,6 @@ export default async function handler(req, res) {
       }
 
       // ===== COPY BREVO CREATION DATE TO SOURCE_DATE FOR NEW CONTACTS ONLY =====
-      // Only applies to contacts created after the cutoff date (tomorrow onwards)
-      // Old imported contacts without SOURCE_DATE are skipped intentionally
       if (!attrs.SOURCE_DATE && contact.createdAt) {
         const created = new Date(contact.createdAt);
 
@@ -160,7 +163,82 @@ export default async function handler(req, res) {
     offset += fetchLimit;
   }
 
+  // ─────────────────────────────────────────────
+  // PASS 2: Drip 50 clean contacts from list 12 → list 8
+  // A contact is considered clean if it has been through
+  // at least one daily run (SOURCE_DATE set or skipped intentionally,
+  // name split done, phone normalized)
+  // ─────────────────────────────────────────────
+  let dripOffset = 0;
+  let dripCount = 0;
+
+  while (dripCount < DRIP_BATCH_SIZE) {
+    const tempResponse = await fetch(
+      `https://api.brevo.com/v3/contacts/lists/${TEMP_LIST_ID}/contacts/get?limit=${fetchLimit}&offset=${dripOffset}`,
+      {
+        method: "POST",
+        headers: {
+          "api-key": apiKey,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({})
+      }
+    );
+
+    if (!tempResponse.ok) break;
+
+    const tempData = await tempResponse.json();
+    const tempContacts = tempData.contacts || [];
+
+    if (tempContacts.length === 0) break;
+
+    for (const contact of tempContacts) {
+      if (dripCount >= DRIP_BATCH_SIZE) break;
+
+      const attrs = contact.attributes || {};
+
+      // ===== CLEAN CHECK =====
+      // Must have FIRSTNAME (name split has run)
+      // Must not be an OTA email
+      const email = contact.email || "";
+      const isOTA = blockedDomains.some(d => email.toLowerCase().includes(d));
+      const hasName = !!attrs.FIRSTNAME;
+
+      if (!hasName || isOTA) continue;
+
+      // ===== ADD TO PAST GUEST LIST =====
+      await fetch(
+        `https://api.brevo.com/v3/contacts/lists/${PAST_GUEST_LIST_ID}/contacts/add`,
+        {
+          method: "POST",
+          headers: {
+            "api-key": apiKey,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ emails: [contact.email] })
+        }
+      );
+
+      // ===== REMOVE FROM TEMP LIST =====
+      await fetch(
+        `https://api.brevo.com/v3/contacts/lists/${TEMP_LIST_ID}/contacts/remove`,
+        {
+          method: "POST",
+          headers: {
+            "api-key": apiKey,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ emails: [contact.email] })
+        }
+      );
+
+      dripCount++;
+    }
+
+    dripOffset += fetchLimit;
+  }
+
   return res.status(200).send(
-    `Scanned ${scanned} contacts. Processed ${totalProcessed}.`
+    `Scanned ${scanned} contacts. Processed ${totalProcessed}. Dripped ${dripCount} contacts from temp to Past Guest list.`
   );
 }
