@@ -6,14 +6,13 @@ export default async function handler(req, res) {
   const blockedDomains = ["booking.com", "vrbo.com", "airbnb.com"];
 
   const tempResponse = await fetch(
-    `https://api.brevo.com/v3/contacts/lists/${TEMP_LIST_ID}/contacts/get?limit=10&offset=0`,
+    `https://api.brevo.com/v3/contacts/lists/${TEMP_LIST_ID}/contacts?limit=10&offset=0`,
     {
-      method: "POST",
+      method: "GET",
       headers: {
         "api-key": apiKey,
         "Content-Type": "application/json"
-      },
-      body: JSON.stringify({})
+      }
     }
   );
 

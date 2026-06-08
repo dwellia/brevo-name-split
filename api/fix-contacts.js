@@ -165,23 +165,19 @@ export default async function handler(req, res) {
 
   // ─────────────────────────────────────────────
   // PASS 2: Drip 50 clean contacts from list 12 → list 8
-  // A contact is considered clean if it has been through
-  // at least one daily run (SOURCE_DATE set or skipped intentionally,
-  // name split done, phone normalized)
   // ─────────────────────────────────────────────
   let dripOffset = 0;
   let dripCount = 0;
 
   while (dripCount < DRIP_BATCH_SIZE) {
     const tempResponse = await fetch(
-      `https://api.brevo.com/v3/contacts/lists/${TEMP_LIST_ID}/contacts/get?limit=${fetchLimit}&offset=${dripOffset}`,
+      `https://api.brevo.com/v3/contacts/lists/${TEMP_LIST_ID}/contacts?limit=${fetchLimit}&offset=${dripOffset}`,
       {
-        method: "POST",
+        method: "GET",
         headers: {
           "api-key": apiKey,
           "Content-Type": "application/json"
-        },
-        body: JSON.stringify({})
+        }
       }
     );
 
@@ -196,10 +192,6 @@ export default async function handler(req, res) {
       if (dripCount >= DRIP_BATCH_SIZE) break;
 
       const attrs = contact.attributes || {};
-
-      // ===== CLEAN CHECK =====
-      // Must have FIRSTNAME (name split has run)
-      // Must not be an OTA email
       const email = contact.email || "";
       const isOTA = blockedDomains.some(d => email.toLowerCase().includes(d));
       const hasName = !!attrs.FIRSTNAME;
@@ -215,7 +207,7 @@ export default async function handler(req, res) {
             "api-key": apiKey,
             "Content-Type": "application/json"
           },
-          body: JSON.stringify({ emails: [contact.email] })
+          body: JSON.stringify({ emails: [email] })
         }
       );
 
@@ -228,7 +220,7 @@ export default async function handler(req, res) {
             "api-key": apiKey,
             "Content-Type": "application/json"
           },
-          body: JSON.stringify({ emails: [contact.email] })
+          body: JSON.stringify({ emails: [email] })
         }
       );
 
